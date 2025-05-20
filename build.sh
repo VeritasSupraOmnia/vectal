@@ -12,11 +12,8 @@ make(){
  done
 # Make new vectal binary for functionality testing
  <vectal.vc ./vectal >asm/testvectal.a
- <dvectal.vc ./vectal >asm/testdvectal.a
  nasm asm/testvectal.a -o testvectal 
- nasm asm/testdvectal.a -o testdvectal 
  chmod +x ./testvectal
- chmod +x ./testdvectal
 }
 install(){
  sudo cp ./vectal /usr/bin/
