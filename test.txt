@@ -1,0 +1,66 @@
+; This is a test of the vectal Vectorized Algorithm assembly preprocessor.
+; It uses up to two size characters for size and granularity of operation. Then the
+;  actual symbol defining the operation, then each operand argument - be it register
+;  or memory or immediate.
+; Omitting the second size character implies the same granularity as block size when
+;  not using SIMD, but implies byte size when you are.
+
+λ≟aab ι=cd λ≟fff λζ+eaa 
+
+; The above line translates to the below assembly - very nice for condensed assembly.
+; Especially good when you have an extremely common idiom that doesn't need clarity.
+
+vpcmpeqb ymm0,ymm0,ymm1
+mov rcx,rdx
+vpcmpeqb ymm5,ymm5,ymm5
+vpaddb ymm4,ymm0,ymm0
+
+; Immediates are set using the '#' character in the place where it would be in normal
+;  assembly. They are defined by putting a single whitespace character between it and the
+;  last argument char, then the definition continues until the next whitespace (so you 
+;  can't currently split up an immediate with whitespace and have it be valid)
+
+ι≫a# 1	θ=a# label
+
+; Memory accesses are similarly initiated, with the argument character being '*' instead,
+;  but the actual definition goes until just after the first instance of the ']' closing
+;  bracked character. When an instruction has both a calculated memory access and an
+;  immediate, the memory access always goes first.
+
+ι=b* [memoryaccess]	θζ=a* [byteaccess]	θ=*# [memoryaccess] 1
+
+; According to the effective size of the memory's argument, memory accesses get a 
+;  prepending size declaration in the form of "byte", "qword" "yword" and so on.
+
+; Instructions that directly translate one size to another forgo the size-gran
+;  paradigm and mirror the changeover directly as the size of each
+
+θ⋖aa ι⋗bb 
+
+κθ=aa
+θκ=aa
+κι=aa
+ικ=aa
+θλ↯bc
+ιλ↯bc
+
+; Common assembly idioms are prime candidates for vectalization.
+
+λλ=a* [input+rsi]
+λλ=*a [output+rdi]
+λζ≟bag θλ↯ab θθ⋖aa θ+ea θ+fa θ+e# 1
+
+; Argument remapping macros, called functions in this language's vernacular, are
+;  defined with the following syntax.
+
+{:function ι=ab ι=bc ι=cd ι=da }
+
+; Such functions are currently invoked with the following syntax.
+
+{=function ab bc cd da }
+
+; Such an invokation produces the following vectal code.
+
+ι=bc ι=cd ι=da ι=ab
+ λη⇋ab*# [abs rdi] 0b10101010
+ κκ⊽bb
