@@ -1,0 +1,181 @@
+; Vector algorithm creation language - vectal?
+%include "syscall.ah"
+%include "head.ah"
+%define buffersize 1024*1024*4
+%define perftest
+c_fehdr main
+; direct translation
+main:
+nop
+θ=*# [rel doperf] 0 ι⫯a
+cmp eax,1
+ja .doperf
+ jmp .skipperf
+.doperf:
+mov dword[rel doperf],1
+%include "hdrs/perftimerstart.ah"
+; read from stdin
+.skipperf: θ=*# [rel isiz] 0
+.readloop: θ⊽aa θ⊽ee θ=f# ibuf θ=d# buffersize syscall
+ θ+*a [rel isiz] θ≟a# buffersize ι∘# .readloop
+ θ=a* [rel isiz] θ=*# [rel osiz] 0
+; setup masks
+ λλ⊽ggg λζ≟hhh λζ⊱i* [rel unicodebit] λζ⊱j* [rel ws] λζ⊱l* [rel nl]
+; convert utf-8 to double width unicode
+computeloop: ι⊽mm ι⊽nn
+; byte indexes into input and output buffers
+; move through ascii code until you reach unicode
+; necessary because in a mixed file, most code may not even use unicode
+restartloop: ζ=*# [rel parsestate] 0
+; don't start with state
+λζ⊱i* [rel unicodebit] λζ⊱k* [rel semicolon] λζ⊱l* [rel nl]
+; unicodebit is 0x80
+ ι⊽oo ι⊽pp
+; clear byte offset into unicode between instructions
+.nounicodesearchlp:
+ λλ=a* [ibuf+r12] λλ⋀bai vptest ymm6, ymm1
+ λλ=*a [obuf+r13] jnc .unicodefound
+ ι+m# 32 ι+n# 32 θ+*# [rel osiz] 32 θ≟m* [rel isiz] μι∘# doprint
+ η∘# .nounicodesearchlp
+; advance pointers by amount to get to unicode
+.unicodefound: 
+ λζ≟bbi θλ↯ab θ⋖aa ι+ma ι+na θ+*a [rel osiz]
+ θ≟m* [rel isiz] μι∘# doprint ι⊽pp
+ ; actually decode the unicode
+unidecode:
+; load unicode
+  ι=op  ι=a* [ibuf+r12+r14] ; last end offset 
+; Determine if at end of input, because this loops too.
+ ι≑l* [r12+r15] θ≟l* [rel isiz] ΓΓ∘# doprint
+; Find count of bytes via first byte ending bitmask
+ θ=b# -1 θ⊽ba θ≪b# 24 θ⋗bb ; little endian
+; INDEX INTO AND USE THE PEXT BITMASK ARRAY BASED ON THIS COUNT
+ ; keep the byte offset into instruction
+ ; clear "found valid unicode flag"
+ ; byte count to bitmask index (2 bytes is first unicode)
+ ι+pb ζ⋀*# [parsestate] 0xfe θ-b# 2 ββ∘# .notunicode
+.goodunicode: ι=b* [unicodebexttbl+(rbx*8)] ι⇋a ; little endian
+ pext rax, rax, rbx ; actual pext to convert from utf-8 to code point
+ ζ⋁*# [rel parsestate] 1 η∘# .statemultiplex ; set "found valid unicode flag"
+.notunicode: θζ=a* [ibuf+r12+r14] θ+p# 1 ; set single byte and continue
+ ; big switch depending on parse state, 
+.statemultiplex:
+ ; calculate new choice and its offset
+ λζ⊱a* [parsestate] λλ=b* [rel statetable] λζ≟aab θλ↯ba θ⋖bb
+ θη=b* [choicetable+(rbx*2)] θ≟b* [rel choiceaddr] ι∘# .skipaddrcopy
+ θ=*b [rel choiceaddr]
+.skipaddrcopy: ζ=*# [parsestate] 0 ; reset for next iter
+; jump relative to correct offset. Function choices can set next default jump 
+db 0xe9
+choiceaddr: dd 0 ; for quickly changing it
+choicejmp: ; end of jmp for rip relative calculation
+
+
+abortinstruction: ; when a choice determines the unicode is not in instruction format
+%include "choices/instructionabort.ah"
+choiceatsize: ; 0b1
+%include "choices/choiceatsize.ah"
+choicemaybegran: ; 0b11
+%include "choices/choicemaybegran.ah"
+choiceinstrlist: ; 0b101 or 0b10 - gran done, or size is done and is not unicode
+%include "choices/choiceinstrlist.ah" ; looks up instruction code
+choiceargtype: ; 0b1000 - arg definition is all ascii
+%include "choices/choiceargtype.ah"
+
+emitinstruction: ; when there is enough info to determine which instruction to emit
+%include "choices/emitinstruction.ah"
+emissiondone:
+%include "choices/emissiondone.ah"
+
+controlprefix: 
+%include "choices/controlprefix.ah"
+
+exitloop: ; nullchar is found so print up to it
+θλ↯ab θ⋖aa θ+*a [rel osiz]
+doprint: ; input is finished, so print the output
+θ=a# 1 θ=ea θ=d* [rel osiz] θ=f# obuf syscall
+θ≟*# [rel doperf] 0 ι∘# nomex
+%include "hdrs/perftimerend.ah"
+%include "hdrs/perftimerprint.ah"
+nomex:
+nominal_exit
+catex:
+catastrophic_exit
+; STATIC TABLES FOR DECIDING PARSE BRANCHING
+statetable:
+db 0b00000000 ; bad unicode state. Copy byte and keep going
+db 0b00000001 ; at size definition. else instruction abort
+db 0b00000011 ; could be gran, else jump to instruction check
+db 0b00000010 ; is instruction
+db 0b00000100 ; after gran ascii
+db 0b00000101 ; after gran unicode
+db 0b00001000 ; after instruction calc args, ascii only
+db 0b00010000 ; finished arg calculation, don't hold emission
+db 0b00010001 ; finished arg calculation, don't hold emission
+db 0b10000000 ; done with all emmission, should not be unicode but wspace
+db 0b10000001 ; done with all emmission, should not be unicode but wspace
+dq 0,0,0
+choicetable:; named jump shortcuts for preemptive loading during choices
+ct_abort: ; 0b0
+dw (abortinstruction-choicejmp)
+ct_atsize: ; 0b1
+dw (choiceatsize-choicejmp)
+ct_maybegran: ; 0b11
+dw (choicemaybegran-choicejmp)
+ct_instrlist: ; 0b10
+dw (choiceinstrlist-choicejmp)
+ct_ainstrlist: ; 0b100
+dw (choiceinstrlist-choicejmp)
+ct_uinstrlist: ; 0b101
+dw (choiceinstrlist-choicejmp)
+ct_aargtype: ; 0b1000
+dw (choiceargtype-choicejmp)
+ct_aemit: ; 0b10000
+dw (emitinstruction-choicejmp)
+ct_uemit: ; 0b10001
+dw (emitinstruction-choicejmp)
+ct_areturn: ; 0b10000000
+dw (emissiondone-choicejmp)
+ct_ureturn: ; 0b10000001
+dw (emissiondone-choicejmp)
+; DEFINITION FOR STRINGS
+%include "./hdrs/opdef.ah"
+
+; UNICODE STATIC DATA FOR OPTIMAL CONVERSION SPEED
+unicodebit: db 0b10000000 ; bit for unicode vs ascii parsing mask creation
+unicodebexttbl:
+db 0,0,0,0,0,0,0b00111111,0b00011111 ; anti big endian 
+db 0,0,0,0,0,0b00111111,0b00111111,0b00001111
+db 0,0,0,0,0b00111111,0b00111111,0b00111111,0b00000111
+db 0,0,0,0b00111111,0b00111111,0b00111111, 0b00111111,0b00000011
+db 0,0,0b00111111,0b00111111,0b00111111, 0b00111111,0b00111111,0b00000001
+semicolon: db ";"
+ws: db 0x21
+nl: db 0xa
+c_ftr
+%include "hdrs/perftimermem.ah"
+fulldecode: resw 16 ; full decode of possible instruction that's done when unicode found
+isiz: resd 1
+osiz: resd 1
+iloc: resd 1
+oloc: resd 1 ; 
+uloc: resd 1
+fcnt: resd 1 ; amount of functions saved
+floc: resd 1 ; where in function buf is top
+ninstruct: resq 1 ; data to use in the search for the correct instruction/args
+unidec: resq 2 ; unicode decoding buffer, first qword is input, then output
+parsestate: resb 1 ; bit mask of the state of the parsing engine
+optarget: resb 1 ; opcode index for tables
+argchars: resb 8 ; argument chars for back-calculating registers
+memsiz: resb 1
+immsiz: resb 1
+memarg: resb 128 ; memory for holding purely an instruction's memory argument string
+immarg: resb 128 ; for holding an instruction's immediate argument string
+doperf: resd 1
+alignb 4096
+ibuf: resb buffersize
+obuf: resb buffersize
+incfilebuf: resb buffersize ; buffer for including new files
+fpbuf: resd 1024
+fbuf: resb buffersize
+e_bss

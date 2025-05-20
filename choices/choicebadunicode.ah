@@ -1,0 +1,12 @@
+; bad unicode formulation, so exit
+; TODO: MEDIUM PRIORITY - Print hex index of bad unicode byte and preceeding chars.
+choicebadunicode: ; 0b0
+mov eax, 1
+mov edi, 2
+mov esi, .BUmess
+mov edx, 11
+syscall
+mov eax, sys_ret
+mov edi, 1
+syscall
+.BUmess: db "BADUNICODE",0xa

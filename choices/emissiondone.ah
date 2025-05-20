@@ -1,0 +1,6 @@
+emissiondone:
+add r12, r15
+mov [obuf+r13], byte 0xa
+inc r13
+mov [rel parsestate], byte 0
+jmp restartloop

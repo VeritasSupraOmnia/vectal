@@ -1,0 +1,26 @@
+choicemaybegran: ; 0b1
+ movzx ebx, word [rel ct_uinstrlist] ; assume granularity is probably next
+ mov [rel choiceaddr], ebx
+ mov [rel parsestate], byte 0b100
+ ; check for size symbol codes, otherwise copy utf-8 to out and leave
+ vmovdqu ymm4, [rel sizespec] ; index lookup of size of chunk
+ movd xmm0, eax
+ vpbroadcastw ymm0, xmm0
+ vpcmpeqw ymm0, ymm4
+ vptest ymm6, ymm0
+ jnc .found
+ movzx ebx, byte [rel unidec+1]
+ shr bl, 4
+ cmp bl, 4
+ jle .notsimd
+ mov bl, 1
+.notsimd:
+ or [rel unidec+1], bl ; match size if not simd, default to byte gran otherwise
+ jmp choiceinstrlist
+.found:
+ vpmovmskb eax, ymm0 
+ tzcnt eax, eax
+ shr eax, 1 ; reduce from word mask to index 
+ inc eax ; index comparison starts at 1
+ or [rel unidec+1], al ; or into right nibble of size def byte
+ jmp unidecode ; decode the next byte in the instruction sequence

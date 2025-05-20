@@ -1,0 +1,20 @@
+choiceatsize: ; 0b1
+ movzx ebx, word [rel ct_maybegran] ; assume granularity is probably next
+ mov [rel choiceaddr], ebx
+ ; check for size symbol codes, otherwise copy utf-8 to out and leave
+ vmovdqu ymm4, [rel sizespec] ; index lookup of size of chunk
+ movd xmm0, eax
+ vpbroadcastw ymm0, xmm0
+ vpcmpeqw ymm0, ymm4
+ vptest ymm6, ymm0
+ jc abortinstruction
+ vpmovmskb eax, ymm0 
+ tzcnt eax, eax
+ shr eax, 1 ; reduce from word mask to index 
+ cmp eax, 12
+ je controlprefix ; go to control prefix handling
+ inc rax ; index comparison starts at 1
+ shl eax, 12 ; and move to left nibble of size byte
+ mov [rel unidec], rax ; restart parse by inserting whole qword 
+ mov [rel parsestate], byte 0b10
+ jmp unidecode ; decode next byte in instruction sequence

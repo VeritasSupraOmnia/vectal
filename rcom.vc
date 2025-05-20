@@ -1,0 +1,35 @@
+; Remove all comments from a nasm file. 
+; Not in vectal because I'm not quite that gay / unix philosophy is good.
+; Uses base vectal because it's easier to program in it.
+%include "head.ah"
+%include "syscall.ah"
+%define bsize (1024*1024)
+c_fehdr main
+main:
+nop
+; Read entire file into the buffer
+ θ⊽aa θ⊽ee θ=f# buffer θ=d# bsize syscall
+; Setup state registers
+ θ=d# buffer θ=fd θ=ed θ+da 
+; Setup constant registers
+ λ⊱g* [nl] λ⊱h* [sc] λ⊱i* [sts] θ=j# 1 λλ=eh λ≟ppp λλ⋀ooo
+ ι=i# -1 ζ≟*# [rsi] 0x3b ι∘# incomment
+loop:
+ λλ=a* [rsi] λ≟bae λλ=*a [rdi]
+ θλ↯ab θ⋖aa θ=ba ι+fa ι⋀ai ι+ea θ≟fd μι∘# done
+ θ≟b# 32 ι∘# loop ι⋀ii ζ∘# resetloop η∘# incomment
+resetloop: ζ≟*# [rdi] 0xa ηζ∘# .finishreset ι+f θ≟fd μι∘# done 
+.finishreset: λλ=eh ι~i η∘# loop
+incomment: 
+λλ=eg ι~i η∘# loop
+done:
+; Write everything in the buffer
+ θ-e# buffer θ=de θ=a# 1 θ=ea θ=f# buffer syscall
+nomex:
+ nominal_exit
+nl: db 0xa  ; \n
+sc: db 0x3b ; ;
+sts: db 0x22 ; "
+c_ftr
+buffer: resb bsize
+e_bss

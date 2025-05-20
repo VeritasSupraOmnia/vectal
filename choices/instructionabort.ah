@@ -1,0 +1,11 @@
+abortinstruction: ; just copy all bytes
+xor ecx, ecx
+.lp:
+vmovdqu ymm0, [ibuf+r12+rcx]
+vmovdqu [obuf+r13+rcx],ymm0
+add ecx, 32
+cmp ecx, r15d ; r15 is the currently known top of the instruction
+jl .lp
+add r12, r15
+add r13, r15  ; since it's an instruciton abort, all the instruction is
+jmp restartloop ; simply printed unchanged.

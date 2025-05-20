@@ -1,0 +1,181 @@
+emitinstruction:
+; fix implied granularity
+ movzx eax, byte [rel unidec+1]
+ mov ebx, eax 
+ and bl, 0xf
+jnz .notimplied
+ mov ebx, eax
+ shr ebx, 4
+ or eax, ebx
+.notimplied:
+ mov [rel unidec+1], al
+; find the instruction
+ movzx eax, byte [rel optarget] ; the index into all the tables based on opcode
+ vmovdqu ymm5, [rel .andmask]
+; generate mask to check against
+ mov ecx, [rel unidec+2]
+ mov r8, rcx
+ shl r8, 8
+ or r8, rcx
+ shl r8, 8
+ or r8, rcx
+ shl r8, 24
+ or r8, [rel unidec]
+ movq xmm4, r8
+ vpbroadcastq ymm4, xmm4
+ vpand ymm4, ymm4, ymm5 ; to compare against specific variants
+ movzx ebx, word [opargtable+(rax*2)]; get offset into opargs from table
+ xor ecx, ecx ; for checking end of list
+ xor r8, r8
+.loop:
+ cmp [opargs+rbx+(rcx*8)], r8 ; give up when list is exhausted
+ je abortinstruction
+ vpbroadcastq ymm3, [opargs+rbx+(rcx*8)]
+ vpand ymm3, ymm3, ymm5 ; get individual variants
+ vpcmpeqq ymm3, ymm4 ; check if anything is equal
+ vptest ymm6, ymm3
+ jnc .found
+ inc rcx
+ jmp .loop
+ .found:
+; Save size data from match.
+ movzx r10d, word [opargs+6+rbx+(rcx*8)]
+ mov [unidec+6], r10w
+; Grab string index data from match.
+ movzx r11d, byte [opargs+rbx+(rcx*8)]
+ and r11d, 0xf
+ mov edx, r11d
+; Calculate string offset of name.
+ movzx r8d, word [opnametable+(rax*2)] ; Get index into opnames array for base copy.
+; Iteratively search through null term strings in opnames array.
+.nameindexloop:
+ sub r11d, 1
+ jle .exitnameindexloop
+ vpcmpeqb ymm0, ymm6, [opnames+r8]
+ vpmovmskb r9d, ymm0
+ tzcnt r9d, r9d
+ lea r8, [r8+r9+1]
+ jmp .nameindexloop ; Keep searching through strings until the correct index is found.
+; Copy right name to output and increment past it + a space char.
+.exitnameindexloop:
+ vmovdqu ymm0, [opnames+r8]
+ vpcmpeqb ymm1, ymm0, ymm6
+ vmovdqu [obuf+r13], ymm0
+ vpmovmskb r8d, ymm1
+ tzcnt r8d, r8d
+ add r13, r8
+ mov [obuf+r13], byte 0x20 ; Initial space after instruction.
+ inc r13
+; Copy each argument to just after the instruction text with commas between.
+ movzx eax, word [rel unidec+6] ; Grab the sizes of each argument.
+ movzx r10, byte [rel unidec] ; Grab the argument count from the upper nibble of this.
+ xor r11, r11
+ shr r10, 4
+.argloop:
+ movzx ebx, byte [argchars+r11]
+; Basic flow switchboard, only three options so boolean branching logic is fine.
+ cmp bl, '*'
+ je .deref
+ cmp bl, '#'
+ je .immed
+ jmp .regis
+; Actual code to handle each arg type.
+.deref: ; Memory dereference, just copy memarg data (in vectal.a) to output buffer.
+ mov edx, eax
+ and edx, 0xf
+ dec edx
+ movzx edx, word [sizetypetable+(rdx*2)]
+ vmovdqu ymm0, [sizetypes+rdx]
+ vpcmpeqb ymm1,ymm0,ymm6
+ vpmovmskb edx, ymm1
+ tzcnt edx, edx
+ vmovdqu [obuf+r13], ymm0
+ add r13, rdx
+ movzx ecx, byte [rel memsiz]
+ mov edx, ecx
+ xor edi, edi
+.dereflp:
+ vmovdqu ymm0, [memarg+rdi]
+ vmovdqu [obuf+r13+rdi], ymm0
+ add edi, 32
+ sub ecx, 32
+ jg .dereflp
+ add r13, rdx
+ jmp .argumentscopied
+; Immediate string, copy content of immarg (in vectal.a) to output buffer.
+.immed:
+ movzx ecx, byte [rel immsiz]
+ mov edx, ecx
+ xor edi, edi
+.immlp:
+ vmovdqu ymm0, [immarg+rdi]
+ vmovdqu [obuf+r13+rdi], ymm0
+ add edi, 32
+ sub ecx, 32
+ jg .immlp
+ add r13, rdx
+ jmp .argumentscopied
+; Register string, copy from list by traversing table then index into nullterm 
+;  string array.
+.regis:
+; Convert ascii to register index.
+ sub bl, 0x61 ; Should be lowercase.
+; Table lookup for size name array offset.
+ mov edx, eax
+ and edx, 0xf ; Get only the size nibble
+ dec edx ; Starts at 1.
+ movzx r9d, word [sizenametable+(rdx*2)] ; Load size's offset into name array.
+ shr eax, 4 ; Next nibble.
+; Now that there is a name lookup offset for the targeted size do a rough, block-search.
+.roughregsearchlp: 
+ vpcmpeqb ymm0, ymm6, [sizenames+r9]
+ vpmovmskb esi, ymm0
+ popcnt edi, esi ; Count and if not there, keep looking.
+ cmp edi, ebx
+ jge .doneroughregsearch
+ add r9, 32
+ sub ebx, edi
+ jmp .roughregsearchlp
+.doneroughregsearch:
+; Now do a fine grain search for the right index.
+.fineregsearchlp:
+ sub ebx, 1
+ jl .donefineregsearch
+ tzcnt edi, esi
+ blsr esi, esi
+ shrx esi, esi, edi
+ shr esi, 1
+ lea r9, [r9+rdi+1]
+ jmp .fineregsearchlp
+.donefineregsearch:
+; Now copy the name to output and move write head by that string's size.
+ vmovdqu ymm0, [sizenames+r9]
+ vmovdqu [obuf+r13], ymm0
+ vpcmpeqb ymm0, ymm6 ; λζ≟bbf
+ vpmovmskb r8d, ymm0
+ tzcnt r8d, r8d
+ add r13, r8
+; Exit if no arguments left.
+.argumentscopied:
+ add r11, 1
+ sub r10, 1
+ jz .argsdone 
+; Add a comma if not the last argument.
+ mov [obuf+r13], byte ','
+ inc r13
+ jmp .argloop
+.argsdone:
+
+; Clean up and return to loop.
+ mov [rel osiz], r13d
+.istructret:
+ mov [parsestate], byte 0b10000000
+ jmp emissiondone
+; Mask for anding and cmpeq-ing 4 arg type variations at once.
+; Checks arg counts, sizing symbols and arg type bytes.
+; Does not check op string indexes.
+.andmask: 
+db 0xf0,0xff,0xff,0,0,0,0,0
+db 0xf0,0xff,0,0xff,0,0,0,0
+db 0xf0,0xff,0,0,0xff,0,0,0
+db 0xf0,0xff,0,0,0,0xff,0,0

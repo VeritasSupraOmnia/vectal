@@ -1,0 +1,24 @@
+; instruction list checking
+choiceinstrlist: 
+movzx ebx, word [rel ct_maybegran]
+mov [rel choiceaddr], ebx
+xor esi, esi
+movd xmm0, eax
+vpbroadcastw ymm0, xmm0
+.findloop:
+vmovdqu ymm5, [opunicode+(rsi*2)]
+vpcmpeqw ymm1, ymm0, ymm5
+vpcmpeqw ymm2, ymm5, ymm6
+vpmovmskb ebx, ymm1
+vpmovmskb ecx, ymm2
+tzcnt ebx, ebx
+tzcnt ecx, ecx
+mov eax, ebx
+shr eax, 1
+add esi, eax
+cmp ebx, ecx
+jg abortinstruction
+je .findloop
+mov [rel optarget], sil; put opcode target into parse state
+mov [rel parsestate], byte 0b1000
+jmp unidecode

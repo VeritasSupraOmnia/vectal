@@ -1,0 +1,90 @@
+choiceargtype:
+ movzx ebx, word [rel ct_aemit]
+ mov [rel choiceaddr], ebx
+ ; first find the size the argument string
+ vpbroadcastb ymm5, [rel .twenty] ; db 0x21
+ vmovdqu ymm0, [ibuf+r12+r14]
+ vpcmpgtb ymm1, ymm5, ymm0
+ vpmovmskb eax, ymm1
+ tzcnt eax, eax
+ jz .noargs
+ mov ecx, eax
+ add r15, rax
+ shl al, 4
+ or [rel unidec], al ; update the size in the parallelized checker
+ xor ebx, ebx
+ xor edi, edi
+ lea rdx, [r12+r14]
+ ; find the types of each of the arguments and put that into the decode
+.argtypeloop:
+ movzx esi, byte [ibuf+rdx]
+ mov [argchars+rdi], sil
+ shl ebx, 1
+ cmp sil, byte "*"
+ sete al
+ or ebx, eax
+ shl ebx, 1
+ cmp sil, byte "#"
+ sete al
+ or ebx, eax
+ inc rdx
+ inc rdi
+ loop .argtypeloop
+.noargs: ; jump to here if there aren't even any explicit arguments
+ ; put that byte into the start of the unidec struct for later broadcast
+ mov [rel unidec+2], bl
+ ; deal with memory argument
+ mov al, bl
+ and al, 0b10101010
+ jz .nomem ; assume memory access comes first or not at all, can have whitespace
+ ; ends on ']' just reuse rdx+rcx
+ inc rdx
+ inc r15
+ xor r9, r9
+ vpbroadcastb ymm1, [.close]
+ vpbroadcastb ymm3, [.slookup_base]
+.memlp:
+ ; copy memory arg to its buffer
+ vmovdqu ymm0, [ibuf+rdx+r9]
+ vmovdqu [memarg+r9], ymm0
+ ; calculate the size of the memory arg and save
+ vpcmpeqb ymm2,ymm1,ymm0
+ vpmovmskb esi, ymm2
+ tzcnt esi, esi
+ add r9, rsi
+ cmp esi, 32
+ je .memlp
+ inc r9
+ mov [rel memsiz], r9b
+ add r15, r9
+ add rdx, r9
+.nomem:
+ and bl, 0b01010101
+ jz .noimm ; assume after memory, no whitespace
+ vpbroadcastb ymm1, [.twenty]
+ inc r15
+ inc rdx
+ xor r9, r9
+.immlp:
+ ; copy immediate arg to its buffer
+ vmovdqu ymm0, [ibuf+rdx+r9]
+ vmovdqu [immarg+r9], ymm0
+ ; calculate the size of the immediate arg and save
+ vpcmpgtb ymm2,ymm1,ymm0
+ vpmovmskb esi, ymm2
+ tzcnt esi, esi
+ add r9, rsi
+ cmp esi, 32
+ je .immlp
+ add r15, r9
+ mov [rel immsiz], r9b
+.noimm:
+ mov [rel  parsestate], byte 0b10000
+ jmp emitinstruction
+.twenty: db 0x21
+.ws: db 0x20
+.high: db 0x80
+.close: db ']'
+.slookup_base: db 0xce
+.slookup: db 0xb6,0xb7,0xb8,0xb9,0xba,0xbb,0xbc
+.eslookup:
