@@ -22,6 +22,7 @@ install(){
 test(){
  <test.vc ./rcom |./testvectal >test.a
  nasm test.a -o test
+ <test.txt ./rcom |./testvectal 
 }
 #Backup everything to another file, uses root privleges because could be to a mounted floppy.
 backup(){
